@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  speech-service:
+    build:
+      context: ./speech-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_ENV=production
+      - SERVICE_KEY=fluentai-internal-key-2026
+      - WHISPER_MODEL=base
+      - WHISPER_DEVICE=cpu
+      - WHISPER_COMPUTE_TYPE=int8
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    volumes:
+      - fluentai-data:/app/data
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - JWT_SECRET=fluentai-production-jwt-secret-replace-me-32chars
+      - CORS_ORIGIN=http://localhost:5173
+      - SPEECH_SERVICE_URL=http://speech-service:8000
+      - SPEECH_SERVICE_KEY=fluentai-internal-key-2026
+      - DATA_DIR=/app/data
+      - AUTO_VERIFY_CLINICIANS=false
+    depends_on:
+      - speech-service
+
+volumes:
+  fluentai-data:
