@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; }
+  body { @apply bg-surface text-ink antialiased; font-feature-settings: 'cv11', 'ss01'; }
+  h1, h2, h3 { @apply tracking-tight; }
+  :focus-visible { @apply outline-2 outline-offset-2 outline-brand-600; }
+  ::selection { background: #A8DBDF; }
+}
+
+@layer components {
+  .card { @apply rounded-xl2 border border-line bg-surface-raised shadow-card; }
+  .label { @apply mb-1.5 block text-sm font-medium text-ink-soft; }
+  .input {
+    @apply w-full rounded-lg border border-line-strong bg-white px-3.5 py-2.5 text-[15px] text-ink
+           placeholder:text-ink-faint transition focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-200;
+  }
+  .help { @apply mt-1.5 text-[13px] text-ink-muted; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
