@@ -65,7 +65,7 @@ export function loadConfig(overrides: Partial<Record<string, string>> = {}): Con
     env: parsed.NODE_ENV,
     port: parsed.PORT,
     jwtSecret: parsed.JWT_SECRET ?? 'dev-only-secret-change-me-please',
-    corsOrigins: parsed.CORS_ORIGIN.split(',').map((s) => s.trim()),
+    corsOrigins: parsed.CORS_ORIGIN.split(',').map((s) => s.trim().replace(/\/+$/, '')),
     dataDir: parsed.DATA_DIR,
     speechServiceUrl: parsed.SPEECH_SERVICE_URL,
     speechServiceKey: parsed.SPEECH_SERVICE_KEY,
