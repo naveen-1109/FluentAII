@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Alert, Badge, Button, Input, PageHeader, SectionTitle } from '../components/ui';
+import { Alert, Badge, Button, Input, PageHeader, SectionTitle, VerifiedBadge } from '../components/ui';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { useAsync } from '../lib/hooks';
 
 export default function Settings() {
   const { user, logout } = useAuth();
@@ -37,11 +38,15 @@ export default function Settings() {
             <div><dt className="text-ink-muted">Account type</dt><dd className="font-medium capitalize">{user.role}</dd></div>
             {user.role === 'clinician' && (
               <div><dt className="text-ink-muted">Verification</dt><dd>
-                <Badge tone={user.verification === 'verified' ? 'ok' : user.verification === 'rejected' ? 'danger' : 'warn'}>{user.verification ?? 'pending'}</Badge>
+                {user.verification === 'verified'
+                  ? <VerifiedBadge size="md" />
+                  : <Badge tone={user.verification === 'rejected' || user.verification === 'expired' ? 'danger' : 'warn'}>{user.verification === 'expired' ? 'licence expired' : user.verification ?? 'pending'}</Badge>}
               </dd></div>
             )}
           </dl>
         </section>
+
+        {user.role === 'clinician' && <LicenceCard />}
 
         <section className="card border-danger/30 p-6">
           <SectionTitle>Delete my account</SectionTitle>
@@ -63,5 +68,55 @@ export default function Settings() {
         </section>
       </div>
     </>
+  );
+}
+
+const todayIso = () => new Date().toISOString().slice(0, 10);
+
+/** Clinicians see their licence details and can enter a renewed licence (which needs a fresh admin check). */
+function LicenceCard() {
+  const { refresh } = useAuth();
+  const prof = useAsync(() => api.profile.get());
+  const p = prof.data?.profile as Record<string, any> | null | undefined;
+  const [form, setForm] = useState({ licenseNumber: '', licenseRegion: '', licenseExpiry: '' });
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ tone: 'ok' | 'danger'; text: string } | null>(null);
+  useEffect(() => {
+    if (p) setForm({ licenseNumber: p.licenseNumber ?? '', licenseRegion: p.licenseRegion ?? '', licenseExpiry: p.licenseExpiry ?? '' });
+  }, [p?.licenseNumber, p?.licenseRegion, p?.licenseExpiry]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (prof.loading || !p) return null;
+
+  const changed = form.licenseNumber !== (p.licenseNumber ?? '') || form.licenseRegion !== (p.licenseRegion ?? '') || form.licenseExpiry !== (p.licenseExpiry ?? '');
+  const expiryOk = !!form.licenseExpiry && form.licenseExpiry > todayIso();
+
+  async function save() {
+    setBusy(true); setMsg(null);
+    try {
+      await api.profile.save({
+        title: p!.title, specialty: p!.specialty, organisation: p!.organisation, yearsExperience: p!.yearsExperience,
+        languages: p!.languages, bio: p!.bio, acceptsNewPatients: p!.acceptsNewPatients, consentTerms: true, ...form,
+      });
+      await prof.reload(true);
+      await refresh();
+      setMsg({ tone: 'ok', text: 'Saved. FluentAI will check the new licence before your Verified badge returns.' });
+    } catch (e) { setMsg({ tone: 'danger', text: e instanceof ApiError ? e.message : 'Could not save.' }); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <section className="card p-6">
+      <SectionTitle aside={p.verificationStatus === 'verified' ? <VerifiedBadge since={p.verifiedAt} /> : undefined}>Licence</SectionTitle>
+      <p className="mb-4 text-sm text-ink-muted">
+        Patients only see clinicians whose licence FluentAI has checked and which has not expired. Changing these details sends your licence for a new check.
+      </p>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Input label="Licence / registration number" value={form.licenseNumber} onChange={(e) => setForm({ ...form, licenseNumber: e.target.value })} />
+        <Input label="Issuing body" value={form.licenseRegion} onChange={(e) => setForm({ ...form, licenseRegion: e.target.value })} />
+        <Input label="Valid until" type="date" min={todayIso()} value={form.licenseExpiry} onChange={(e) => setForm({ ...form, licenseExpiry: e.target.value })}
+          error={form.licenseExpiry && !expiryOk ? 'This date has passed. Enter the expiry of your current licence.' : undefined} />
+      </div>
+      {msg && <Alert tone={msg.tone} className="mt-4">{msg.text}</Alert>}
+      {changed && <Button className="mt-4" onClick={save} loading={busy} disabled={!expiryOk || form.licenseNumber.trim().length < 3}>Save and send for checking</Button>}
+    </section>
   );
 }

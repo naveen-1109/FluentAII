@@ -2,8 +2,9 @@ import { ArrowLeft, Info, Play, RefreshCw, Share2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ComponentBars, FlowRing, MetricTile, SpeechTimeline, TranscriptView } from '../components/insights';
-import { Alert, Badge, Button, Checkbox, SectionTitle, Spinner, Textarea } from '../components/ui';
+import { Alert, Badge, Button, Checkbox, SectionTitle, Spinner, Textarea, VerifiedBadge } from '../components/ui';
 import { api, ApiError } from '../lib/api';
+import { useFeatures } from '../lib/features';
 import { useAuth } from '../lib/auth';
 import { ACTIVITY_LABEL, fmtDate, fmtDateTime, fmtDuration, fmtNum } from '../lib/format';
 import { useAsync, usePolling } from '../lib/hooks';
@@ -13,6 +14,7 @@ import { StatusBadge } from './Sessions';
 export default function SessionDetail() {
   const { id = '' } = useParams();
   const { user } = useAuth();
+  const feats = useFeatures();
   const { data, error, loading, reload } = useAsync(() => api.sessions.get(id), [id]);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -31,6 +33,7 @@ export default function SessionDetail() {
   }
 
   const { session: s, notes, access } = data;
+  const { features: f } = feats;
   const owner = access === 'owner';
   const ind = s.indicators;
 
@@ -76,7 +79,9 @@ export default function SessionDetail() {
             <h2 className="font-semibold">Ready to analyse</h2>
             <p className="mt-1 text-sm text-ink-muted">Analysis transcribes the recording and measures pace, pauses and repetitions. It usually takes about as long as the recording.</p>
           </div>
-          {owner && <Button onClick={analyse} loading={busy}>Analyse this recording</Button>}
+          {owner && (f.analysis
+            ? <Button onClick={analyse} loading={busy}>Analyse this recording</Button>
+            : <p className="text-sm text-ink-muted">Analysis is turned off for your account right now.</p>)}
         </div>
       )}
 
@@ -89,7 +94,7 @@ export default function SessionDetail() {
       {s.status === 'failed' && (
         <Alert tone="danger" title="This recording could not be analysed" className="mb-6">
           <p>{s.error ?? 'An unknown error occurred.'}</p>
-          {owner && <Button className="mt-3" size="sm" variant="secondary" onClick={analyse} loading={busy}><RefreshCw className="h-3.5 w-3.5" aria-hidden /> Try again</Button>}
+          {owner && f.analysis && <Button className="mt-3" size="sm" variant="secondary" onClick={analyse} loading={busy}><RefreshCw className="h-3.5 w-3.5" aria-hidden /> Try again</Button>}
         </Alert>
       )}
 
@@ -152,7 +157,7 @@ export default function SessionDetail() {
           <ul className="space-y-4">
             {notes.map((n) => (
               <li key={n.id} className="rounded-lg bg-surface px-4 py-3">
-                <p className="text-sm font-semibold">{n.clinicianName} <span className="ml-2 text-xs font-normal text-ink-muted">{fmtDate(n.createdAt)}</span></p>
+                <p className="flex flex-wrap items-center gap-2 text-sm font-semibold">{n.clinicianName} {n.clinicianVerified && <VerifiedBadge />}<span className="ml-2 text-xs font-normal text-ink-muted">{fmtDate(n.createdAt)}</span></p>
                 <p className="mt-1 whitespace-pre-wrap text-[15px] text-ink-soft">{n.body}</p>
               </li>
             ))}
@@ -161,7 +166,9 @@ export default function SessionDetail() {
         {!owner && user?.role === 'clinician' && <NoteComposer sessionId={s.id} onSaved={() => reload(true)} />}
       </section>
 
-      {owner && <SharePanel sessionId={s.id} current={data.shares?.map((x) => x.clinicianId) ?? []} onSaved={() => reload(true)} />}
+      {owner && (f.sessionSharing || (data.shares?.length ?? 0) > 0) && (
+        <SharePanel sessionId={s.id} canAdd={f.sessionSharing} current={data.shares?.map((x) => x.clinicianId) ?? []} onSaved={() => reload(true)} />
+      )}
     </>
   );
 }
@@ -204,16 +211,16 @@ function NoteComposer({ sessionId, onSaved }: { sessionId: string; onSaved: () =
   );
 }
 
-function SharePanel({ sessionId, current, onSaved }: { sessionId: string; current: string[]; onSaved: () => void }) {
+function SharePanel({ sessionId, current, onSaved, canAdd }: { sessionId: string; current: string[]; onSaved: () => void; canAdd: boolean }) {
   const appts = useAsync(() => api.care.appointments());
   const [sel, setSel] = useState<string[]>(current);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: 'ok' | 'danger'; text: string } | null>(null);
   useEffect(() => setSel(current), [current.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const clinicians = new Map<string, string>();
+  const clinicians = new Map<string, { name: string; verified: boolean }>();
   for (const a of appts.data?.appointments ?? []) {
-    if (a.status === 'accepted' || a.status === 'completed') clinicians.set(a.clinicianId, a.otherName);
+    if (a.status === 'accepted' || a.status === 'completed') clinicians.set(a.clinicianId, { name: a.otherName, verified: a.otherVerified });
   }
   const dirty = sel.slice().sort().join() !== current.slice().sort().join();
 
@@ -229,13 +236,14 @@ function SharePanel({ sessionId, current, onSaved }: { sessionId: string; curren
       <SectionTitle aside={<Badge tone={current.length ? 'info' : 'muted'}>{current.length ? `Shared with ${current.length}` : 'Private'}</Badge>}>
         <span id="share" className="inline-flex items-center gap-2"><Share2 className="h-4 w-4" aria-hidden /> Share with a clinician</span>
       </SectionTitle>
+      {!canAdd && <Alert tone="info" className="mb-4">Sharing new sessions is turned off for your account. You can still stop sharing this one.</Alert>}
       <p className="mb-4 text-sm text-ink-muted">This session is private unless you share it. You can stop sharing at any time. Clinicians can see the recording, transcript and results.</p>
       {appts.loading ? <Spinner /> : clinicians.size === 0 ? (
         <p className="text-sm text-ink-muted">You can share with a clinician after they accept a consultation request. <Link to="/app/clinicians" className="font-medium text-brand-700 hover:underline">Find a clinician</Link></p>
       ) : (
         <div className="space-y-3">
-          {[...clinicians].map(([cid, name]) => (
-            <Checkbox key={cid} checked={sel.includes(cid)} onChange={(e) => setSel(e.target.checked ? [...sel, cid] : sel.filter((x) => x !== cid))}>{name}</Checkbox>
+          {[...clinicians].map(([cid, { name, verified }]) => (
+            <Checkbox key={cid} checked={sel.includes(cid)} disabled={!canAdd && !current.includes(cid)} onChange={(e) => setSel(e.target.checked ? [...sel, cid] : sel.filter((x) => x !== cid))}><span className="inline-flex flex-wrap items-center gap-2">{name}{verified && <VerifiedBadge />}</span></Checkbox>
           ))}
           <Button onClick={save} loading={busy} disabled={!dirty}>Save sharing</Button>
         </div>

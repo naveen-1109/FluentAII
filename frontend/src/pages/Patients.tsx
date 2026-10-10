@@ -1,4 +1,5 @@
 import { ArrowLeft, Users } from 'lucide-react';
+import { RoadmapPlanEditor } from '../components/RoadmapPlanEditor';
 import { Link, useParams } from 'react-router-dom';
 import { TrendChart, trendPoints } from '../components/insights';
 import { Alert, Badge, EmptyState, PageHeader, SectionTitle, Spinner } from '../components/ui';
@@ -70,6 +71,7 @@ export function PatientDetail() {
           </ul>
         </div>
       )}
+      {data?.patient && <RoadmapPlanEditor patientId={id} name={data.patient.name.split(' ')[0] ?? data.patient.name} />}
     </>
   );
 }

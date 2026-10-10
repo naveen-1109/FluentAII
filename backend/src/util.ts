@@ -28,12 +28,25 @@ export function getSessionRow(db: DB, id: string): SessionRow | undefined {
   return db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as SessionRow | undefined;
 }
 
+/**
+ * A clinician counts as verified only when an admin approved them after checking the licence
+ * (verified_at is set) AND the licence has not expired. Use with the clinician_profiles alias `c`.
+ */
+export const VALID_CLINICIAN_SQL = `(c.verification_status = 'verified' AND c.verified_at IS NOT NULL
+  AND c.license_expiry IS NOT NULL AND c.license_expiry >= date('now'))`;
+
+/** verified | expired | pending | rejected. A legacy approval without a licence check counts as pending. */
+export const CLINICIAN_STATUS_SQL = `(CASE
+  WHEN ${VALID_CLINICIAN_SQL} THEN 'verified'
+  WHEN c.verification_status = 'verified' AND c.verified_at IS NOT NULL THEN 'expired'
+  WHEN c.verification_status = 'rejected' THEN 'rejected'
+  ELSE 'pending' END)`;
+
 export const isVerifiedClinician = (db: DB, userId: string): boolean => {
   const r = db
     .prepare(
       `SELECT 1 FROM users u JOIN clinician_profiles c ON c.user_id = u.id
-       WHERE u.id = ? AND u.role = 'clinician' AND u.registered = 1
-         AND c.verification_status = 'verified'`,
+       WHERE u.id = ? AND u.role = 'clinician' AND u.registered = 1 AND ${VALID_CLINICIAN_SQL}`,
     )
     .get(userId);
   return !!r;

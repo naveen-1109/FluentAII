@@ -40,6 +40,32 @@ def schema_sql(root: Path) -> str:
     return m.group(1)
 
 
+def migrate(db) -> None:
+    """Same columns the API adds on start-up, so this script works on older databases too."""
+    have = {r[1] for r in db.execute("PRAGMA table_info(clinician_profiles)")}
+    for col in ("license_expiry", "verified_at", "verified_by", "verification_ref", "verification_note"):
+        if col not in have:
+            db.execute(f"ALTER TABLE clinician_profiles ADD COLUMN {col} TEXT")
+    if "ai_roadmap_consent" not in {r[1] for r in db.execute("PRAGMA table_info(patient_profiles)")}:
+        db.execute("ALTER TABLE patient_profiles ADD COLUMN ai_roadmap_consent INTEGER NOT NULL DEFAULT 0")
+
+
+def add_demo_clinician(db, uid, title, specialty, org, licence, years, langs, now) -> None:
+    iso = lambda d: d.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    """Demo clinicians get a (fake) licence that is valid for two years and a recorded demo check."""
+    expiry = (now + timedelta(days=730)).date().isoformat()
+    db.execute(
+        """INSERT INTO clinician_profiles
+             (user_id, title, specialty, organisation, license_number, license_region, years_experience, languages, bio,
+              accepts_new_patients, verification_status, consent_terms, consented_at,
+              license_expiry, verified_at, verified_by, verification_ref, verification_note)
+           VALUES (?,?,?,?,?,?,?,?,?,1,'verified',1,?,?,?,?,?,?)""",
+        (uid, title, specialty, org, licence, "Demo region", years, langs,
+         "Demo profile created by the seed script. Not a real clinician.", iso(now),
+         expiry, iso(now), "demo seed script", licence, "Demo data: no real licence was checked."),
+    )
+
+
 def build_words(text: str, disfluency: int, rng: random.Random):
     """Illustrative timing model: word-level timestamps with a chosen amount of repeats/fillers/pauses."""
     toks = text.split()
@@ -82,6 +108,7 @@ def main() -> None:
     (data / "audio").mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(data / "fluentai.db")
     db.executescript(schema_sql(root))
+    migrate(db)
     db.execute("PRAGMA foreign_keys = ON")
     now = datetime.now(timezone.utc)
     iso = lambda d: d.isoformat(timespec="milliseconds").replace("+00:00", "Z")
@@ -94,20 +121,18 @@ def main() -> None:
     pid, cid = str(uuid.uuid4()), str(uuid.uuid4())
     db.execute("INSERT INTO users VALUES (?,?,?,?,?,1,?)", (pid, "demo.patient@fluentai.test", h, "patient", "Demo Patient", iso(now)))
     db.execute("INSERT INTO users VALUES (?,?,?,?,?,1,?)", (cid, "demo.clinician@fluentai.test", h, "clinician", "Priya Raman (demo)", iso(now)))
-    db.execute("INSERT INTO patient_profiles VALUES (?,?,?,?,1,1,?)", (pid, "25-34", "English", "Feel calmer on phone calls", iso(now)))
     db.execute(
-        "INSERT INTO clinician_profiles VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?)",
-        (cid, "Dr", "Speech-language pathology (demo)", "Demo Fluency Clinic", "DEMO-0000", "Demo region", 8,
-         "English, Hindi", "Demo profile created by the seed script. Not a real clinician.", 1, "verified", iso(now)),
+        "INSERT INTO patient_profiles (user_id, age_group, primary_language, goals, consent_voice_processing, consent_terms, consented_at)"
+        " VALUES (?,?,?,?,1,1,?)",
+        (pid, "25-34", "English", "Feel calmer on phone calls", iso(now)),
     )
+    add_demo_clinician(db, cid, "Dr", "Speech-language pathology (demo)", "Demo Fluency Clinic", "DEMO-0000", 8,
+                       "English, Hindi", now)
     # a second, unrelated demo clinician to populate the directory
     c2 = str(uuid.uuid4())
     db.execute("INSERT INTO users VALUES (?,?,?,?,?,1,?)", (c2, "demo.clinician2@fluentai.test", h, "clinician", "Arjun Mehta (demo)", iso(now)))
-    db.execute(
-        "INSERT INTO clinician_profiles VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?)",
-        (c2, "Mr", "Speech and language therapy (demo)", "Demo Community Health", "DEMO-0001", "Demo region", 4,
-         "English, Tamil", "Demo profile created by the seed script. Not a real clinician.", 1, "verified", iso(now)),
-    )
+    add_demo_clinician(db, c2, "Mr", "Speech and language therapy (demo)", "Demo Community Health", "DEMO-0001", 4,
+                       "English, Tamil", now)
 
     rng = random.Random(7)
     disfl = [5, 4, 3, 2, 1, 1]  # gently improving, illustrative only

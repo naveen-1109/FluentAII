@@ -67,7 +67,7 @@ try:
     check("patient registration", pat.call("PUT", "/profile", dict(confirmAdult=True, ageGroup="25-34", primaryLanguage="English", goals="", consentVoiceProcessing=True, consentTerms=True))[0] == 200)
     check("clinician signup+registration",
           doc.call("POST", "/auth/signup", dict(fullName="Dana Doc", email="dana@example.com", password=pw, role="clinician", acceptTerms=True))[0] == 201
-          and doc.call("PUT", "/profile", dict(title="Dr", specialty="Speech-language pathology", organisation="Clinic", licenseNumber="SLP-1", licenseRegion="India", yearsExperience=5, languages="English", bio="", acceptsNewPatients=True, consentTerms=True))[0] == 200)
+          and doc.call("PUT", "/profile", dict(title="Dr", specialty="Speech-language pathology", organisation="Clinic", licenseNumber="SLP-1001", licenseRegion="Rehabilitation Council of India", licenseExpiry=f"{__import__('datetime').date.today().year + 2}-06-30", yearsExperience=5, languages="English", bio="", acceptsNewPatients=True, consentTerms=True))[0] == 200)
 
     st, up = pat.call("POST", "/sessions", multipart=dict(fields=dict(title="E2E", activity="reading"), file=make_wav(2.0)))
     check("upload recording", st == 201 and up["session"]["status"] == "uploaded", str(up))

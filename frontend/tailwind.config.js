@@ -15,6 +15,8 @@ export default {
         warn: { DEFAULT: '#A8650F', soft: '#FDF3E1' },
         danger: { DEFAULT: '#B83A2E', soft: '#FCEBE9' },
         info: { DEFAULT: '#2B6CB0', soft: '#E8F1FA' },
+        lime: { DEFAULT: '#D4FF3A', soft: '#EEFFB0', deep: '#A9D400' },
+        night: { DEFAULT: '#05070A', 2: '#0A0F14', 3: '#111922', line: 'rgba(255,255,255,0.08)' },
       },
       fontFamily: {
         sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],

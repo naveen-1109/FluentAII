@@ -14,7 +14,18 @@ const schema = z.object({
   // Dev convenience only: lets new clinician accounts appear in the directory
   // without manual licence checking. Must be false in production.
   AUTO_VERIFY_CLINICIANS: z.enum(['true', 'false']).default('false'),
+  // Admin panel account, created or updated from these values when the server starts.
+  ADMIN_EMAIL: z.string().optional(),
+  ADMIN_PASSWORD: z.string().optional(),
+  ADMIN_NAME: z.string().default('FluentAI Admin'),
+  // Optional: lets Claude write personal coaching for the fluency roadmap (patients opt in).
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_MODEL: z.string().default('claude-sonnet-5-5'),
+  ANTHROPIC_BASE_URL: z.string().url().default('https://api.anthropic.com'),
 });
+
+/** Used only in development when ADMIN_EMAIL / ADMIN_PASSWORD are not set. Refused in production. */
+export const DEV_ADMIN = { email: 'admin@fluentai.local', password: 'FluentAdmin#2026' };
 
 export type Config = {
   env: 'development' | 'test' | 'production';
@@ -26,6 +37,10 @@ export type Config = {
   speechServiceKey: string;
   maxUploadBytes: number;
   autoVerifyClinicians: boolean;
+  admin: { email: string; password: string; name: string } | null;
+  anthropicApiKey: string | undefined;
+  anthropicModel: string;
+  anthropicBaseUrl: string;
 };
 
 export function loadConfig(overrides: Partial<Record<string, string>> = {}): Config {
@@ -36,6 +51,15 @@ export function loadConfig(overrides: Partial<Record<string, string>> = {}): Con
       throw new Error('AUTO_VERIFY_CLINICIANS must be false in production.');
     if (parsed.SPEECH_SERVICE_KEY === 'dev-service-key')
       throw new Error('Set SPEECH_SERVICE_KEY to a private value in production.');
+    if (parsed.ADMIN_PASSWORD !== undefined &&
+        (parsed.ADMIN_PASSWORD.length < 12 || parsed.ADMIN_PASSWORD === DEV_ADMIN.password))
+      throw new Error('ADMIN_PASSWORD must be at least 12 characters and not the development default in production.');
+  }
+  let admin: Config['admin'] = null;
+  if (parsed.ADMIN_EMAIL && parsed.ADMIN_PASSWORD) {
+    admin = { email: parsed.ADMIN_EMAIL.trim(), password: parsed.ADMIN_PASSWORD, name: parsed.ADMIN_NAME };
+  } else if (parsed.NODE_ENV === 'development') {
+    admin = { ...DEV_ADMIN, name: parsed.ADMIN_NAME };
   }
   return {
     env: parsed.NODE_ENV,
@@ -47,5 +71,9 @@ export function loadConfig(overrides: Partial<Record<string, string>> = {}): Con
     speechServiceKey: parsed.SPEECH_SERVICE_KEY,
     maxUploadBytes: parsed.MAX_UPLOAD_MB * 1024 * 1024,
     autoVerifyClinicians: parsed.AUTO_VERIFY_CLINICIANS === 'true',
+    admin,
+    anthropicApiKey: parsed.ANTHROPIC_API_KEY?.trim() || undefined,
+    anthropicModel: parsed.ANTHROPIC_MODEL,
+    anthropicBaseUrl: parsed.ANTHROPIC_BASE_URL.replace(/\/+$/, ''),
   };
 }

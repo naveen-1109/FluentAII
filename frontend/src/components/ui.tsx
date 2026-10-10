@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Info, Loader2, XCircle } from 'lucide-react';
+import { AlertTriangle, BadgeCheck, CheckCircle2, Info, Loader2, XCircle } from 'lucide-react';
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from 'react';
 import { forwardRef, useId } from 'react';
 
@@ -138,14 +138,14 @@ export const SectionTitle = ({ children, aside }: { children: ReactNode; aside?:
   </div>
 );
 
-export function Logo({ className = '' }: { className?: string }) {
+export function Logo({ className = '', dark = false }: { className?: string; dark?: boolean }) {
   return (
     <span className={`inline-flex items-center gap-2.5 font-semibold tracking-tight ${className}`}>
       <svg viewBox="0 0 32 32" className="h-8 w-8" aria-hidden>
         <rect width="32" height="32" rx="8" fill="#0F7880" />
         <path d="M6 17h3l2-6 3 12 3-16 3 12 2-6h4" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
-      <span className="text-[19px]">Fluent<span className="text-brand-700">AI</span></span>
+      <span className="text-[19px]">Fluent<span className={dark ? 'text-lime' : 'text-brand-700'}>AI</span></span>
     </span>
   );
 }
@@ -156,3 +156,16 @@ export const Disclaimer = ({ className = '' }: { className?: string }) => (
     substitute for care from a qualified speech-language pathologist.
   </p>
 );
+
+/** Shown next to clinicians whose licence an admin has checked and which has not expired. */
+export function VerifiedBadge({ size = 'sm', since }: { size?: 'sm' | 'md'; since?: string | null }) {
+  const title = since
+    ? `Licence checked by FluentAI on ${new Date(since).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })} and currently valid`
+    : 'Licence checked by FluentAI and currently valid';
+  return (
+    <span title={title} aria-label="Verified clinician"
+      className={`inline-flex shrink-0 items-center gap-1 rounded-full bg-info-soft font-semibold text-info ${size === 'md' ? 'px-2.5 py-1 text-[13px]' : 'px-2 py-0.5 text-[11px]'}`}>
+      <BadgeCheck className={size === 'md' ? 'h-4 w-4' : 'h-3.5 w-3.5'} aria-hidden /> Verified
+    </span>
+  );
+}

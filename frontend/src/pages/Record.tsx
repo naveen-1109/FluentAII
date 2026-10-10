@@ -1,13 +1,27 @@
-import { FileAudio, Mic, Upload } from 'lucide-react';
-import { useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { FileAudio, Mic, Route, Upload } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Recorder, type Recording } from '../components/Recorder';
 import { Alert, Button, Input, PageHeader, Select } from '../components/ui';
 import { api, ApiError } from '../lib/api';
+import { useFeatures } from '../lib/features';
 import { ACTIVITY_LABEL, fmtDuration } from '../lib/format';
 import type { Activity } from '../lib/types';
 
 const MAX_MB = 25;
+
+/** Shown when the user starts a session from their roadmap. Same wording as the server's technique list. */
+const TECHNIQUES: Record<string, { name: string; how: string }> = {
+  breath: { name: 'Relaxed breathing', how: 'Breathe in low and slow through your nose, then start speaking gently as you breathe out.' },
+  easyOnset: { name: 'Easy onsets', how: 'Start the first sound of a phrase softly, with a little air flowing first, instead of a hard start.' },
+  lightContact: { name: 'Light contacts', how: 'Touch your lips and tongue together lightly on sounds like p, b, t, d, k and g, as if they were feathers.' },
+  pullOut: { name: 'Smooth pull-outs', how: 'If you feel stuck on a sound, slow it down and stretch it gently into the rest of the word instead of pushing.' },
+  pauseNotFill: { name: 'Pause instead of filling', how: 'When you need a moment, close your mouth and pause silently. A short pause sounds calm; "um" is not needed.' },
+  phrasing: { name: 'Planned phrasing', how: 'Speak in short phrases of 4 to 6 words with a relaxed breath and a brief pause between them.' },
+  stretch: { name: 'Gentle stretching', how: 'Stretch the first vowel of a phrase slightly and keep your voice moving through the words.' },
+  rate: { name: 'Steady pace', how: 'Slow down a little and give each word its full length. Aim for an easy, even rhythm.' },
+  carry: { name: 'Real-life practice', how: 'Use your techniques in a situation you meet this week: a phone call, ordering food or introducing yourself.' },
+};
 const ACCEPT = 'audio/webm,audio/ogg,audio/wav,audio/x-wav,audio/mpeg,audio/mp4,audio/x-m4a,audio/aac,.webm,.ogg,.wav,.mp3,.m4a,.aac';
 
 const PROMPTS: Record<Activity, string> = {
@@ -19,9 +33,24 @@ const PROMPTS: Record<Activity, string> = {
 
 export default function Record() {
   const nav = useNavigate();
-  const [tab, setTab] = useState<'record' | 'upload'>('record');
+  const { features: f } = useFeatures();
+  const [picked, setTab] = useState<'record' | 'upload'>('record');
+  const tab = !f.recording ? 'upload' : !f.upload ? 'record' : picked;
   const [title, setTitle] = useState('');
-  const [activity, setActivity] = useState<Activity>('free_speech');
+  const [params] = useSearchParams();
+  const techKey = params.get('technique') ?? '';
+  const [fromRoadmap, setFromRoadmap] = useState(TECHNIQUES[techKey]);
+  // Use the wording the admin set for this technique, if it was edited.
+  useEffect(() => {
+    if (!TECHNIQUES[techKey] || !f.roadmap) return;
+    api.roadmap.get().then(({ roadmap }) => {
+      const t = roadmap.phases.flatMap((p) => p.exercises).find((e) => e.technique.key === techKey)?.technique;
+      if (t) setFromRoadmap({ name: t.name, how: t.how });
+    }).catch(() => undefined);
+  }, [techKey, f.roadmap]);
+  const [activity, setActivity] = useState<Activity>(
+    (Object.keys(ACTIVITY_LABEL) as Activity[]).includes(params.get('activity') as Activity) ? (params.get('activity') as Activity) : 'free_speech',
+  );
   const [rec, setRec] = useState<Recording | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState<null | 'save' | 'analyse'>(null);
@@ -38,8 +67,9 @@ export default function Record() {
     try {
       const { session } = await api.sessions.upload(
         blob, title.trim() || `${ACTIVITY_LABEL[activity]} · ${new Date().toLocaleDateString()}`, activity, name,
+        tab === 'record' ? 'recording' : 'upload',
       );
-      if (analyse) await api.sessions.transcribe(session.id); // explicit user action
+      if (analyse && f.analysis) await api.sessions.transcribe(session.id); // explicit user action
       nav(`/app/sessions/${session.id}`);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not save the recording. Please try again.');
@@ -64,12 +94,17 @@ export default function Record() {
   return (
     <>
       <PageHeader title="New recording" subtitle="Record in your browser or upload a file. Nothing is analysed until you choose to." />
+      {!f.recording && !f.upload ? (
+        <Alert tone="info" title="New recordings are not available right now">Recording and uploading have been turned off for your account. Your existing sessions are still available under My sessions.</Alert>
+      ) : (
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_340px]">
         <div className="space-y-5">
-          <div role="tablist" aria-label="Input method" className="inline-flex gap-1 rounded-xl border border-line bg-white p-1">
-            <Tab id="record"><Mic className="h-4 w-4" aria-hidden /> Record</Tab>
-            <Tab id="upload"><Upload className="h-4 w-4" aria-hidden /> Upload</Tab>
-          </div>
+          {f.recording && f.upload && (
+            <div role="tablist" aria-label="Input method" className="inline-flex gap-1 rounded-xl border border-line bg-white p-1">
+              <Tab id="record"><Mic className="h-4 w-4" aria-hidden /> Record</Tab>
+              <Tab id="upload"><Upload className="h-4 w-4" aria-hidden /> Upload</Tab>
+            </div>
+          )}
 
           {tab === 'record' ? (
             <Recorder onRecorded={setRec} onReset={() => setRec(null)} />
@@ -97,14 +132,23 @@ export default function Record() {
               </Select>
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <Button onClick={() => save(true)} loading={busy === 'analyse'} disabled={!blob || !!busy}>Save and analyse</Button>
-              <Button variant="secondary" onClick={() => save(false)} loading={busy === 'save'} disabled={!blob || !!busy}>Save only</Button>
+              {f.analysis && <Button onClick={() => save(true)} loading={busy === 'analyse'} disabled={!blob || !!busy}>Save and analyse</Button>}
+              <Button variant={f.analysis ? 'secondary' : 'primary'} onClick={() => save(false)} loading={busy === 'save'} disabled={!blob || !!busy}>Save only</Button>
               {tab === 'record' && rec && <span className="text-sm text-ink-muted">Length: {fmtDuration(rec.seconds)}</span>}
             </div>
           </div>
         </div>
 
-        <aside className="card h-fit p-6">
+        <aside className="h-fit space-y-4">
+          {fromRoadmap && (
+            <div className="card border-brand-200 bg-brand-50/60 p-6">
+              <p className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.12em] text-brand-700"><Route className="h-4 w-4" aria-hidden /> From your roadmap</p>
+              <h2 className="mt-2 text-base font-semibold">Technique: {fromRoadmap.name}</h2>
+              <p className="mt-1.5 text-[15px] leading-relaxed text-ink-soft">{fromRoadmap.how}</p>
+              <Link to="/app/roadmap" className="mt-3 inline-block text-sm font-medium text-brand-700 hover:underline">Back to my roadmap</Link>
+            </div>
+          )}
+          <div className="card p-6">
           <h2 className="text-base font-semibold">Suggestion</h2>
           <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">{PROMPTS[activity]}</p>
           <h3 className="mt-6 text-sm font-semibold">For clearer results</h3>
@@ -113,8 +157,10 @@ export default function Record() {
             <li>Speak for at least 30 seconds.</li>
             <li>Speak naturally. Please do not try to hide how you usually speak.</li>
           </ul>
+          </div>
         </aside>
       </div>
+      )}
     </>
   );
 }

@@ -1,6 +1,6 @@
 import { CalendarClock, Check, X } from 'lucide-react';
 import { useState } from 'react';
-import { Alert, Badge, Button, EmptyState, PageHeader, Spinner, Textarea } from '../components/ui';
+import { Alert, Badge, Button, EmptyState, PageHeader, Spinner, Textarea, VerifiedBadge } from '../components/ui';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { fmtDateTime, MODE_LABEL } from '../lib/format';
@@ -44,7 +44,11 @@ export default function Appointments() {
         subtitle={clinician ? 'Accept or decline requests from patients.' : 'Your requests and confirmed consultations.'} />
       {(error || err) && <Alert tone="danger" className="mb-4">{error ?? err}</Alert>}
       {clinician && user?.verification !== 'verified' && (
-        <Alert tone="warn" title="Verification pending" className="mb-4">You can reply to requests once your account is verified.</Alert>
+        <Alert tone="warn" title={user?.verification === 'expired' ? 'Your licence has expired' : 'Verification pending'} className="mb-4">
+          {user?.verification === 'expired'
+            ? 'Update your licence details under Account after renewing it. You can reply to requests once the new licence has been checked.'
+            : 'You can reply to requests once your licence has been checked and your account is verified.'}
+        </Alert>
       )}
       {loading ? <Spinner /> : all.length === 0 ? (
         <EmptyState icon={<CalendarClock className="h-6 w-6" aria-hidden />} title="No consultations yet">
@@ -60,7 +64,7 @@ export default function Appointments() {
                   <li key={a.id} className="card p-5">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
-                        <p className="font-semibold">{a.otherName}{a.otherDetail ? <span className="font-normal text-ink-muted"> · {a.otherDetail}</span> : null}</p>
+                        <p className="flex flex-wrap items-center gap-x-2 font-semibold">{a.otherName}{!clinician && a.otherVerified && <VerifiedBadge />}{a.otherDetail ? <span className="font-normal text-ink-muted"> · {a.otherDetail}</span> : null}</p>
                         <p className="mt-0.5 text-sm text-ink-muted">{fmtDateTime(a.requestedStart)} · {MODE_LABEL[a.mode]}</p>
                       </div>
                       <Badge tone={TONE[a.status]}>{LABEL[a.status]}</Badge>

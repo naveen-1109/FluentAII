@@ -14,6 +14,7 @@ export default function Signup() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
   const [terms, setTerms] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,9 +22,10 @@ export default function Signup() {
   if (user) return <Navigate to={user.registered ? '/app' : '/register'} replace />;
 
   const pwOk = password.length >= 8;
+  const match = confirm === password;
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (!pwOk || !terms) return;
+    if (!pwOk || !match || !terms) return;
     setBusy(true);
     setError(null);
     try {
@@ -63,10 +65,12 @@ export default function Signup() {
         <Input label="Email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
         <Input label="Password" type="password" autoComplete="new-password" required value={password}
           onChange={(e) => setPassword(e.target.value)} help="At least 8 characters." error={password && !pwOk ? 'Use at least 8 characters.' : undefined} />
+        <Input label="Confirm password" type="password" autoComplete="new-password" required value={confirm}
+          onChange={(e) => setConfirm(e.target.value)} error={confirm && !match ? 'Passwords do not match.' : undefined} />
         <Checkbox checked={terms} onChange={(e) => setTerms(e.target.checked)}>
           I agree to the terms of use and privacy notice, and I understand FluentAI provides practice insights and does not give medical advice.
         </Checkbox>
-        <Button type="submit" size="lg" className="w-full" loading={busy} disabled={!fullName.trim() || !email || !pwOk || !terms}>Continue</Button>
+        <Button type="submit" size="lg" className="w-full" loading={busy} disabled={!fullName.trim() || !email || !pwOk || !confirm || !match || !terms}>Continue</Button>
       </form>
     </AuthShell>
   );

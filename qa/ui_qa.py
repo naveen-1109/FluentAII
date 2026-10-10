@@ -100,7 +100,7 @@ try:
         c3 = br.new_context(viewport={"width":1280,"height":900}, permissions=["microphone"]); np_ = c3.new_page(); hook(np_,"newpatient")
         np_.goto(B+"/signup")
         np_.get_by_label("Full name").fill("Browser Tester"); np_.get_by_label("Email").fill(f"bt{int(time.time())}@example.com")
-        np_.get_by_label("Password").fill("Str0ngPassw0rd!")
+        np_.get_by_label("Password", exact=True).fill("Str0ngPassw0rd!"); np_.get_by_label("Confirm password").fill("Str0ngPassw0rd!")
         np_.get_by_label("I agree to the terms of use", exact=False).check()
         np_.screenshot(path=f"{OUT}/13_signup.png", full_page=True)
         np_.get_by_role("button", name="Continue").click(); np_.wait_for_url("**/register")

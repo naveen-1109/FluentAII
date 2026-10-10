@@ -14,7 +14,8 @@ import {
 } from '../auth.js';
 import type { Deps } from '../app.js';
 import { nowIso } from '../db.js';
-import { newId } from '../util.js';
+import { newId, audit, CLINICIAN_STATUS_SQL } from '../util.js';
+import { ADMIN_COOKIE, adminCookieOptions, signAdminToken } from '../adminAuth.js';
 
 const signupSchema = z.object({
   fullName: z.string().trim().min(2).max(100),
@@ -46,9 +47,9 @@ export function authRouter({ db, config }: Deps) {
     let verification: string | null = null;
     if (u.role === 'clinician') {
       const c = db
-        .prepare('SELECT verification_status FROM clinician_profiles WHERE user_id = ?')
-        .get(id) as { verification_status: string } | undefined;
-      verification = c?.verification_status ?? null;
+        .prepare(`SELECT ${CLINICIAN_STATUS_SQL} AS status FROM clinician_profiles c WHERE c.user_id = ?`)
+        .get(id) as { status: string } | undefined;
+      verification = c?.status ?? null;
     }
     return {
       id: u.id,
@@ -62,7 +63,9 @@ export function authRouter({ db, config }: Deps) {
 
   r.post('/signup', limiter, async (req, res) => {
     const body = signupSchema.parse(req.body);
-    const exists = db.prepare('SELECT 1 FROM users WHERE email = ?').get(body.email);
+    const exists =
+      db.prepare('SELECT 1 FROM users WHERE email = ?').get(body.email) ??
+      db.prepare('SELECT 1 FROM admins WHERE email = ?').get(body.email);
     if (exists) throw new HttpError(409, 'An account with this email already exists.');
     const id = newId();
     db.prepare(
@@ -73,15 +76,32 @@ export function authRouter({ db, config }: Deps) {
     res.status(201).json({ user: publicUser(id) });
   });
 
+  // One sign-in page for everyone. Patient/clinician credentials get the app session;
+  // admin credentials (from ADMIN_EMAIL / ADMIN_PASSWORD) get the separate admin session instead.
   r.post('/login', limiter, async (req, res) => {
     const body = loginSchema.parse(req.body);
     const row = db
       .prepare('SELECT id, role, password_hash FROM users WHERE email = ?')
       .get(body.email) as { id: string; role: Role; password_hash: string } | undefined;
-    const ok = await verifyPassword(body.password, row?.password_hash ?? DUMMY_HASH);
-    if (!row || !ok) throw new HttpError(401, 'Email or password is incorrect.');
-    res.cookie(COOKIE_NAME, signToken(config.jwtSecret, row), cookieOptions(isProd));
-    res.json({ user: publicUser(row.id) });
+    const admin = db
+      .prepare('SELECT id, email, full_name, password_hash FROM admins WHERE email = ?')
+      .get(body.email) as { id: string; email: string; full_name: string; password_hash: string } | undefined;
+
+    if (row && (await verifyPassword(body.password, row.password_hash))) {
+      res.clearCookie(ADMIN_COOKIE, { path: '/' });
+      res.cookie(COOKIE_NAME, signToken(config.jwtSecret, row), cookieOptions(isProd));
+      return res.json({ user: publicUser(row.id) });
+    }
+    if (admin && (await verifyPassword(body.password, admin.password_hash))) {
+      db.prepare('UPDATE admins SET last_login_at = ? WHERE id = ?').run(nowIso(), admin.id);
+      audit(db, admin.id, 'admin_login');
+      res.clearCookie(COOKIE_NAME, { path: '/' });
+      res.cookie(ADMIN_COOKIE, signAdminToken(config.jwtSecret, admin.id), adminCookieOptions(isProd));
+      return res.json({ admin: { id: admin.id, email: admin.email, fullName: admin.full_name } });
+    }
+    if (!row && !admin) await verifyPassword(body.password, DUMMY_HASH); // equalise timing
+    if (admin) audit(db, null, 'admin_login_failed', admin.email);
+    throw new HttpError(401, 'Email or password is incorrect.');
   });
 
   r.post('/logout', (_req, res) => {

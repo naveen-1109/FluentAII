@@ -23,7 +23,9 @@ export default function Login() {
     setError(null);
     try {
       const u = await login(email.trim(), password);
-      nav(u.registered ? from ?? '/app' : '/register', { replace: true });
+      if (!u) { nav(from?.startsWith('/admin') ? from : '/admin', { replace: true }); return; }
+      const back = from && !from.startsWith('/admin') ? from : '/app';
+      nav(u.registered ? back : '/register', { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
     } finally {

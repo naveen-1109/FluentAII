@@ -22,7 +22,7 @@ export default function Register() {
   // clinician
   const [c, setC] = useState({
     title: 'Dr', specialty: 'Speech-language pathology', organisation: '', licenseNumber: '',
-    licenseRegion: '', yearsExperience: '0', languages: 'English', bio: '', acceptsNewPatients: true,
+    licenseRegion: '', licenseExpiry: '', yearsExperience: '0', languages: 'English', bio: '', acceptsNewPatients: true,
   });
   const [terms, setTerms] = useState(false);
 
@@ -50,16 +50,18 @@ export default function Register() {
     }
   }
 
+  const today = new Date().toISOString().slice(0, 10);
+  const expiryOk = !!c.licenseExpiry && c.licenseExpiry > today;
   const ready = patient
     ? adult && !!age && lang.trim().length > 1 && voice && terms
-    : terms && c.title && c.specialty && c.licenseNumber.length >= 3 && c.licenseRegion.length >= 2;
+    : terms && c.title && c.specialty && c.licenseNumber.length >= 3 && c.licenseRegion.length >= 2 && expiryOk;
 
   return (
     <AuthShell
       title={patient ? 'Tell us a little about you' : 'Your professional details'}
       subtitle={patient
         ? 'Step 2 of 2. We only ask for what we need to personalise your practice.'
-        : 'Step 2 of 2. We check licences before clinicians are shown to patients.'}
+        : 'Step 2 of 2. FluentAI checks every licence with the issuing body. Only clinicians with a valid licence are shown to patients, with a Verified badge.'}
       footer={<>Not you? <button className="font-medium text-brand-700 hover:underline" onClick={() => logout()}>Sign out</button></>}
     >
       <form onSubmit={submit} className="space-y-5" noValidate>
@@ -86,9 +88,15 @@ export default function Register() {
             </div>
             <Input label="Clinic or organisation" value={c.organisation} onChange={(e) => setC({ ...c, organisation: e.target.value })} />
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Input label="Licence / registration number" value={c.licenseNumber} onChange={(e) => setC({ ...c, licenseNumber: e.target.value })} required />
-              <Input label="Registering body or region" value={c.licenseRegion} onChange={(e) => setC({ ...c, licenseRegion: e.target.value })} required />
+              <Input label="Licence / registration number" value={c.licenseNumber} onChange={(e) => setC({ ...c, licenseNumber: e.target.value })} required
+                help="Exactly as on your certificate, e.g. your RCI CRR number." />
+              <Input label="Issuing body" value={c.licenseRegion} onChange={(e) => setC({ ...c, licenseRegion: e.target.value })} required
+                placeholder="Rehabilitation Council of India" />
             </div>
+            <Input label="Licence valid until" type="date" min={today} value={c.licenseExpiry} required
+              onChange={(e) => setC({ ...c, licenseExpiry: e.target.value })}
+              help="We hide your profile from patients automatically when this date passes."
+              error={c.licenseExpiry && !expiryOk ? 'This licence has expired. Renew it before registering.' : undefined} />
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Input label="Years of experience" type="number" min={0} max={70} value={c.yearsExperience} onChange={(e) => setC({ ...c, yearsExperience: e.target.value })} />
               <Input label="Languages" value={c.languages} onChange={(e) => setC({ ...c, languages: e.target.value })} />

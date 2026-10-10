@@ -20,6 +20,154 @@
   .help { @apply mt-1.5 text-[13px] text-ink-muted; }
 }
 
+/* ---------- Landing page (dark, cinematic) ---------- */
+.landing-dark { color-scheme: dark; background-color: #05070A; color: #fff; }
+body:has(.landing-dark) { background-color: #05070A; }
+.landing-dark ::selection { background: #D4FF3A; color: #05070A; }
+.btn-lime {
+  background: #D4FF3A; color: #05070A;
+  box-shadow: 0 0 0 1px rgba(212,255,58,.4), 0 8px 30px -6px rgba(212,255,58,.55);
+  transition: transform .2s ease, box-shadow .2s ease, background .2s ease;
+}
+.btn-lime:hover { background: #E2FF70; transform: translateY(-1px); box-shadow: 0 0 0 1px rgba(212,255,58,.6), 0 14px 40px -6px rgba(212,255,58,.7); }
+.text-gradient {
+  background: linear-gradient(100deg, #78C5CB 0%, #A8F0D8 40%, #D4FF3A 75%, #78C5CB 100%);
+  background-size: 200% auto; -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: shine 6s linear infinite;
+}
+.eyebrow { font-size: 13px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; color: #D4FF3A; }
+
+.hero-bg { position: absolute; inset: 0; z-index: -1; overflow: hidden; }
+.hero-bg::before {
+  content: ''; position: absolute; inset: -20% -10% auto -10%; height: 120%;
+  background:
+    radial-gradient(40% 45% at 72% 42%, rgba(27,143,151,.35), transparent 70%),
+    radial-gradient(25% 30% at 85% 20%, rgba(212,255,58,.12), transparent 70%),
+    radial-gradient(35% 40% at 10% 10%, rgba(67,170,178,.12), transparent 70%);
+  filter: blur(10px);
+}
+.hero-bg::after {
+  content: ''; position: absolute; inset: 0;
+  background-image: linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px);
+  background-size: 64px 64px;
+  -webkit-mask-image: radial-gradient(70% 60% at 50% 40%, #000 30%, transparent 80%);
+          mask-image: radial-gradient(70% 60% at 50% 40%, #000 30%, transparent 80%);
+}
+.cta-bg { position: absolute; inset: 0;
+  background:
+    radial-gradient(60% 90% at 50% 120%, rgba(212,255,58,.28), transparent 70%),
+    radial-gradient(50% 80% at 10% -20%, rgba(27,143,151,.45), transparent 70%),
+    #0A0F14; }
+
+.fade-up { animation: fade-up .9s cubic-bezier(.2,.8,.2,1) both; animation-delay: var(--d, 0ms); }
+
+.glass-chip, .glass-card {
+  position: absolute; z-index: 2; color: #fff;
+  background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.04));
+  border: 1px solid rgba(255,255,255,.14);
+  box-shadow: 0 20px 40px -12px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.12);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+}
+.glass-chip { display: inline-flex; align-items: center; gap: .5rem; padding: .55rem .95rem; border-radius: 9999px; font-size: 13px; color: rgba(255,255,255,.75); }
+.glass-chip b { color: #fff; font-weight: 600; }
+.glass-card { padding: 1rem 1.1rem; border-radius: 18px; }
+.chip-dot { width: 8px; height: 8px; border-radius: 9999px; box-shadow: 0 0 10px currentColor; }
+.float-a { animation: floaty 7s ease-in-out infinite; }
+.float-b { animation: floaty 8s ease-in-out -2.5s infinite; }
+.float-c { animation: floaty 6.5s ease-in-out -4s infinite; }
+.bar-fill { animation: grow-x 1.6s .6s cubic-bezier(.2,.8,.2,1) both; transform-origin: left; }
+
+.marquee { animation: marquee 38s linear infinite; }
+
+.glow-card {
+  position: relative; border-radius: 24px; color: #fff;
+  background: linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.02));
+  border: 1px solid rgba(255,255,255,.08);
+  transition: border-color .3s ease, background .3s ease;
+}
+.glow-card::before {
+  content: ''; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; pointer-events: none;
+  background: linear-gradient(140deg, rgba(212,255,58,.55), rgba(67,170,178,.25) 40%, transparent 70%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  opacity: 0; transition: opacity .35s ease;
+}
+.glow-card:hover::before { opacity: 1; }
+.glow-card:hover { background: linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.025)); }
+
+.eq-bar { background: linear-gradient(to top, #1B8F97, #78C5CB); transform-origin: center; animation: eq 1.4s ease-in-out infinite; animation-delay: calc(var(--i) * -70ms); opacity: .85; }
+.mark-rep { border-radius: 6px; padding: 0 .3rem; background: rgba(245,180,81,.16); color: #F5B451; box-shadow: inset 0 -2px 0 #F5B451; }
+.mark-fill { border-radius: 6px; padding: 0 .3rem; background: rgba(183,156,255,.15); color: #CDBBFF; }
+.mark-pause { border-radius: 6px; padding: 0 .4rem; font-size: 12px; align-self: center; background: rgba(120,197,203,.15); color: #A8DBDF; }
+.draw-line { stroke-dasharray: 420; stroke-dashoffset: 420; animation: draw 2.2s .3s ease forwards; }
+.pulse-dot { animation: pulse 2s ease-in-out infinite; transform-origin: 300px 22px; }
+
+@keyframes shine { to { background-position: 200% center; } }
+@keyframes fade-up { from { opacity: 0; transform: translateY(24px); filter: blur(6px); } }
+@keyframes floaty { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-14px); } }
+@keyframes grow-x { from { transform: scaleX(0); } }
+@keyframes marquee { to { transform: translateX(-50%); } }
+@keyframes eq { 0%,100% { transform: scaleY(.35); } 50% { transform: scaleY(1); } }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.6); opacity: .5; } }
+
+/* ---------- Dashboard ---------- */
+.dash-hero { position: relative; overflow: hidden; border-radius: 22px; color: #fff; background: #0B3A40; }
+.stat-card { transition: transform .2s ease, box-shadow .2s ease; }
+.stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(15,42,61,0.10); }
+.rise { animation: fade-up .7s cubic-bezier(.2,.8,.2,1) both; animation-delay: var(--d, 0ms); }
+.col-grow { transform-origin: bottom; animation: grow-y .8s cubic-bezier(.2,.8,.2,1) both; animation-delay: var(--d, 0ms); }
+@keyframes grow-y { from { transform: scaleY(0); } }
+
+/* Scroll reveal: cards flip up into place */
+.reveal-3d { perspective: 900px; }
+.reveal-3d > .reveal-inner {
+  height: 100%;
+  opacity: 0; transform: rotateX(-35deg) translateY(30px); transform-origin: top center;
+  transition: opacity .7s ease, transform .9s cubic-bezier(.2,.8,.2,1);
+  transition-delay: var(--delay, 0ms);
+}
+.reveal-3d.is-visible > * { opacity: 1; transform: none; }
+
+/* Hover tilt card */
+.tilt-3d {
+  --rx: 0deg; --ry: 0deg; height: 100%;
+  transform: perspective(800px) rotateX(var(--rx)) rotateY(var(--ry));
+  transform-style: preserve-3d; transition: transform .2s ease-out, box-shadow .2s ease-out;
+}
+.tilt-3d:hover { box-shadow: 0 8px 24px rgba(15,42,61,0.10); }
+.tilt-3d .tilt-pop { transform: translateZ(30px); }
+
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  .tilt-3d { transform: none !important; }
+  .marquee { animation: none !important; }
+  .reveal-3d > .reveal-inner { opacity: 1 !important; transform: none !important; }
 }
+
+/* ---------- Sign in / sign up: sliding panel ---------- */
+.auth-panel { transition: left .8s cubic-bezier(.65,0,.35,1); will-change: left; }
+@media (min-width: 1024px) {
+  .auth-form-side { width: 55%; margin-left: var(--form-left); transition: margin-left .8s cubic-bezier(.65,0,.35,1); }
+}
+.auth-form-in { animation: auth-form-in .6s .35s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes auth-form-in { from { opacity: 0; transform: translateX(-24px); } }
+
+/* Heartbeat line on the sign-in panel: a bright pulse travels along a faint trace */
+.ecg-trace {
+  stroke-dasharray: 160 840; stroke-dashoffset: 1000; stroke-opacity: .75;
+  filter: drop-shadow(0 0 4px rgba(255,255,255,.8)) drop-shadow(0 0 10px rgba(168,219,223,.6));
+  animation: ecg 3.2s linear infinite;
+}
+@keyframes ecg { to { stroke-dashoffset: 0; } }
+
+/* Colour fallbacks for the landing page and dashboard (also defined in tailwind.config.js) */
+.bg-night { background-color: #05070A; }
+.bg-night\/70 { background-color: rgba(5,7,10,.7); }
+.bg-night-2\/60 { background-color: rgba(10,15,20,.6); }
+.border-night-line { border-color: rgba(255,255,255,.08); }
+.text-lime { color: #D4FF3A; }
+.text-lime\/70 { color: rgba(212,255,58,.7); }
+.bg-lime { background-color: #D4FF3A; }
+.bg-lime-deep { background-color: #A9D400; }

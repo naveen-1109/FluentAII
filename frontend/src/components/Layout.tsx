@@ -1,7 +1,8 @@
-import { CalendarClock, ClipboardList, HeartPulse, LayoutDashboard, LogOut, Mic, Settings, Stethoscope, Users } from 'lucide-react';
+import { Route, CalendarClock, ClipboardList, HeartPulse, LayoutDashboard, LogOut, Mic, Settings, Stethoscope, Users } from 'lucide-react';
 import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
+import { useFeatures } from '../lib/features';
 import { Badge, Disclaimer, Logo } from './ui';
 
 const link = ({ isActive }: { isActive: boolean }) =>
@@ -13,14 +14,16 @@ export function AppLayout() {
   const { user, logout } = useAuth();
   const nav = useNavigate();
   const [open, setOpen] = useState(false);
+  const { features: f } = useFeatures();
   if (!user) return null;
   const patient = user.role === 'patient';
   const items = patient
     ? [
         { to: '/app', label: 'Overview', Icon: LayoutDashboard, end: true },
-        { to: '/app/record', label: 'New recording', Icon: Mic },
+        ...(f.recording || f.upload ? [{ to: '/app/record', label: 'New recording', Icon: Mic }] : []),
         { to: '/app/sessions', label: 'My sessions', Icon: ClipboardList },
-        { to: '/app/clinicians', label: 'Find a clinician', Icon: Stethoscope },
+        ...(f.roadmap ? [{ to: '/app/roadmap', label: 'My roadmap', Icon: Route }] : []),
+        ...(f.clinicianDirectory ? [{ to: '/app/clinicians', label: 'Find a clinician', Icon: Stethoscope }] : []),
         { to: '/app/appointments', label: 'Consultations', Icon: CalendarClock },
       ]
     : [

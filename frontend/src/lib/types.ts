@@ -6,7 +6,7 @@ export interface User {
   role: Role;
   fullName: string;
   registered: boolean;
-  verification: 'pending' | 'verified' | 'rejected' | null;
+  verification: 'pending' | 'verified' | 'expired' | 'rejected' | null;
 }
 
 export type SessionStatus = 'uploaded' | 'processing' | 'completed' | 'failed';
@@ -75,6 +75,7 @@ export interface Note {
   body: string;
   createdAt: string;
   clinicianName: string;
+  clinicianVerified: boolean;
 }
 
 export interface SessionResponse {
@@ -95,6 +96,8 @@ export interface Clinician {
   languages: string;
   bio: string;
   acceptsNewPatients: boolean;
+  verified: boolean;
+  verifiedAt: string | null;
 }
 
 export type AppointmentStatus = 'requested' | 'accepted' | 'declined' | 'cancelled' | 'completed';
@@ -106,6 +109,8 @@ export interface Appointment {
   clinicianId: string;
   otherName: string;
   otherDetail: string;
+  /** Patients only: the clinician has a checked, valid licence. */
+  otherVerified: boolean;
   requestedStart: string;
   mode: AppointmentMode;
   reason: string;

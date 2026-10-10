@@ -6,6 +6,7 @@ import { TranscriptView, trendPoints } from '../components/insights';
 import { AuthProvider, RequireAuth } from '../lib/auth';
 import { flowBand, fmtDuration } from '../lib/format';
 import Login from '../pages/Login';
+import Signup from '../pages/Signup';
 import type { SessionSummary } from '../lib/types';
 
 type Handler = (url: string, init?: RequestInit) => { status?: number; body: unknown };
@@ -140,5 +141,48 @@ describe('auth flows', () => {
     await u.type(screen.getByLabelText('Password'), 'whatever1');
     await u.click(screen.getByRole('button', { name: 'Sign in' }));
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/Cannot reach the server/));
+  });
+
+  it('asks for the password twice on sign-up and blocks a mismatch', async () => {
+    const fetchMock = mockFetch((url) =>
+      url.endsWith('/auth/me') ? { status: 401, body: { error: 'Not signed in.' } } : { status: 201, body: { user: { ...user, registered: false } } });
+    render(
+      <MemoryRouter initialEntries={['/signup']}>
+        <AuthProvider><Routes><Route path="/signup" element={<Signup />} /><Route path="/register" element={<p>registration page</p>} /></Routes></AuthProvider>
+      </MemoryRouter>,
+    );
+    const u = userEvent.setup();
+    await u.type(await screen.findByLabelText('Full name'), 'Asha K');
+    await u.type(screen.getByLabelText('Email'), 'asha@example.com');
+    await u.type(screen.getByLabelText('Password', { exact: true }), 'Str0ngPassw0rd!');
+    await u.type(screen.getByLabelText('Confirm password'), 'Str0ngPassw0rd?');
+    await u.click(screen.getByRole('checkbox'));
+    expect(screen.getByText('Passwords do not match.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
+
+    await u.clear(screen.getByLabelText('Confirm password'));
+    await u.type(screen.getByLabelText('Confirm password'), 'Str0ngPassw0rd!');
+    expect(screen.queryByText('Passwords do not match.')).not.toBeInTheDocument();
+    await u.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByText('registration page')).toBeInTheDocument();
+    const call = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/auth/signup'))!;
+    expect(JSON.parse(String(call[1]!.body))).not.toHaveProperty('confirm');
+  });
+
+  it('opens the admin panel when admin credentials are used on the normal sign-in page', async () => {
+    mockFetch((url) =>
+      url.endsWith('/auth/me') ? { status: 401, body: { error: 'Not signed in.' } }
+        : { body: { admin: { id: 'a1', email: 'admin@fluentai.local', fullName: 'FluentAI Admin' } } });
+    render(
+      <MemoryRouter initialEntries={['/login']}>
+        <AuthProvider><Routes><Route path="/login" element={<Login />} /><Route path="/admin" element={<p>admin panel</p>} /><Route path="/app" element={<p>patient app</p>} /></Routes></AuthProvider>
+      </MemoryRouter>,
+    );
+    const u = userEvent.setup();
+    await u.type(await screen.findByLabelText('Email'), 'admin@fluentai.local');
+    await u.type(screen.getByLabelText('Password'), 'FluentAdmin#2026');
+    await u.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByText('admin panel')).toBeInTheDocument();
+    expect(screen.queryByText('patient app')).not.toBeInTheDocument();
   });
 });

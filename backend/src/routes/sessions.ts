@@ -6,11 +6,13 @@ import { z } from 'zod';
 import { HttpError, requireRole, requireRegistered } from '../auth.js';
 import type { Deps } from '../app.js';
 import { nowIso } from '../db.js';
+import { assertFeature, requireFeature } from '../features.js';
 import {
   audit,
   getSessionRow,
   hasCareRelationship,
   isVerifiedClinician,
+  VALID_CLINICIAN_SQL,
   newId,
   sessionAccess,
   sessionDetail,
@@ -60,8 +62,10 @@ export function sessionsRouter({ db, config, queue }: Deps) {
         .object({
           title: z.string().trim().min(1).max(120).default('Practice session'),
           activity: z.enum(ACTIVITIES).default('free_speech'),
+          source: z.enum(['recording', 'upload']).default('upload'),
         })
         .parse(req.body);
+      assertFeature(db, req.user!.id, body.source);
       if (req.file.size < 1000) throw new HttpError(400, 'The recording is empty or too short.');
       const id = newId();
       db.prepare(
@@ -104,11 +108,14 @@ export function sessionsRouter({ db, config, queue }: Deps) {
 
     const notes = db
       .prepare(
-        `SELECT n.id, n.body, n.created_at AS createdAt, u.full_name AS clinicianName
+        `SELECT n.id, n.body, n.created_at AS createdAt, u.full_name AS clinicianName,
+                ${VALID_CLINICIAN_SQL} AS clinicianVerified
          FROM session_notes n JOIN users u ON u.id = n.clinician_id
+         LEFT JOIN clinician_profiles c ON c.user_id = n.clinician_id
          WHERE n.session_id = ? ORDER BY n.created_at ASC`,
       )
-      .all(s.id);
+      .all(s.id)
+      .map((n: any) => ({ ...n, clinicianVerified: !!n.clinicianVerified }));
     const shares =
       access === 'owner'
         ? db
@@ -133,7 +140,7 @@ export function sessionsRouter({ db, config, queue }: Deps) {
   });
 
   // Transcription only starts when the patient asks for it.
-  r.post('/:id/transcribe', ...patientOnly, (req, res) => {
+  r.post('/:id/transcribe', ...patientOnly, requireFeature(db, 'analysis'), (req, res) => {
     const s = getSessionRow(db, String(req.params.id));
     if (!s || s.patient_id !== req.user!.id) throw new HttpError(404, 'Session not found.');
     if (s.status === 'processing' || queue.isActive(s.id))
@@ -156,6 +163,8 @@ export function sessionsRouter({ db, config, queue }: Deps) {
     const s = getSessionRow(db, String(req.params.id));
     if (!s || s.patient_id !== req.user!.id) throw new HttpError(404, 'Session not found.');
     const { clinicianIds } = z.object({ clinicianIds: z.array(z.string()).max(20) }).parse(req.body);
+    // Removing shares is always allowed; adding them needs the sharing feature.
+    if (clinicianIds.length) assertFeature(db, req.user!.id, 'sessionSharing');
     for (const cid of clinicianIds) {
       if (!isVerifiedClinician(db, cid) || !hasCareRelationship(db, req.user!.id, cid))
         throw new HttpError(

@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS patient_profiles (
   goals TEXT NOT NULL DEFAULT '',
   consent_voice_processing INTEGER NOT NULL,
   consent_terms INTEGER NOT NULL,
-  consented_at TEXT NOT NULL
+  consented_at TEXT NOT NULL,
+  ai_roadmap_consent INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS clinician_profiles (
@@ -42,7 +43,12 @@ CREATE TABLE IF NOT EXISTS clinician_profiles (
   verification_status TEXT NOT NULL DEFAULT 'pending'
     CHECK (verification_status IN ('pending','verified','rejected')),
   consent_terms INTEGER NOT NULL,
-  consented_at TEXT NOT NULL
+  consented_at TEXT NOT NULL,
+  license_expiry TEXT,      -- YYYY-MM-DD; the clinician is only valid until this date
+  verified_at TEXT,         -- set when an admin confirmed the licence with the issuing body
+  verified_by TEXT,
+  verification_ref TEXT,    -- registry number / reference the admin checked
+  verification_note TEXT
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -98,6 +104,43 @@ CREATE TABLE IF NOT EXISTS appointments (
 CREATE INDEX IF NOT EXISTS idx_appt_patient ON appointments(patient_id);
 CREATE INDEX IF NOT EXISTS idx_appt_clinician ON appointments(clinician_id);
 
+-- Administrators are kept apart from patients and clinicians: separate table, separate cookie.
+CREATE TABLE IF NOT EXISTS admins (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  password_hash TEXT NOT NULL,
+  full_name TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  last_login_at TEXT
+);
+
+-- Global settings edited in the admin panel (JSON values), e.g. feature.recording = true.
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT
+);
+
+-- Per-patient overrides of those settings. A missing row means "use the global setting".
+CREATE TABLE IF NOT EXISTS patient_settings (
+  patient_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT,
+  PRIMARY KEY (patient_id, key)
+);
+
+-- AI-written coaching for the fluency roadmap (only when the patient opted in).
+CREATE TABLE IF NOT EXISTS roadmap_coaching (
+  patient_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  input_hash TEXT NOT NULL,
+  coaching_json TEXT NOT NULL,
+  model TEXT NOT NULL,
+  generated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS audit_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id TEXT,
@@ -111,7 +154,18 @@ export function openDb(file: string): DB {
   if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new Database(file);
   db.exec(SCHEMA);
+  migrate(db);
   return db;
 }
 
 export const nowIso = () => new Date().toISOString();
+
+/** Adds columns introduced after a database was first created. */
+function migrate(db: Database.Database) {
+  const have = new Set((db.prepare(`PRAGMA table_info(clinician_profiles)`).all() as { name: string }[]).map((c) => c.name));
+  for (const col of ['license_expiry', 'verified_at', 'verified_by', 'verification_ref', 'verification_note']) {
+    if (!have.has(col)) db.exec(`ALTER TABLE clinician_profiles ADD COLUMN ${col} TEXT`);
+  }
+  const pat = new Set((db.prepare(`PRAGMA table_info(patient_profiles)`).all() as { name: string }[]).map((c) => c.name));
+  if (!pat.has('ai_roadmap_consent')) db.exec(`ALTER TABLE patient_profiles ADD COLUMN ai_roadmap_consent INTEGER NOT NULL DEFAULT 0`);
+}

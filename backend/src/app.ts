@@ -6,10 +6,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import multer from 'multer';
 import { ZodError } from 'zod';
-import { HttpError, authenticate, requireCustomHeader } from './auth.js';
+import { HttpError, authenticate, requireCustomHeader, requireRole } from './auth.js';
 import type { Config } from './config.js';
 import type { DB } from './db.js';
 import { TranscriptionQueue } from './jobs.js';
+import { ensureAdmin } from './adminAuth.js';
+import { effectiveSettings } from './features.js';
+import { AnthropicCoach, type CoachClient } from './coach.js';
+import { adminRouter } from './routes/admin.js';
+import { roadmapRouter } from './routes/roadmap.js';
 import { authRouter } from './routes/auth.js';
 import { careRouter } from './routes/care.js';
 import { profileRouter } from './routes/profile.js';
@@ -21,13 +26,16 @@ export interface Deps {
   config: Config;
   speech: SpeechClient;
   queue: TranscriptionQueue;
+  coach: CoachClient;
 }
 
-export function createApp(base: Omit<Deps, 'queue'>) {
+export function createApp(base: Omit<Deps, 'queue' | 'coach'> & { coach?: CoachClient }) {
   const queue = new TranscriptionQueue(base.db, base.speech);
   queue.recoverInterrupted();
-  const deps: Deps = { ...base, queue };
+  const coach = base.coach ?? new AnthropicCoach(base.config.anthropicApiKey, base.config.anthropicModel, fetch, base.config.anthropicBaseUrl);
+  const deps: Deps = { ...base, queue, coach };
   const { db, config } = deps;
+  ensureAdmin(db, config.admin);
 
   const app = express();
   app.disable('x-powered-by');
@@ -54,8 +62,14 @@ export function createApp(base: Omit<Deps, 'queue'>) {
   const api = express.Router();
   api.use(requireCustomHeader);
   api.use('/auth', authRouter(deps));
+  api.use('/admin', adminRouter(deps));
+  // Features the admin has switched on or off for this patient.
+  api.get('/features', authenticate(db, config.jwtSecret), requireRole('patient'), (req, res) => {
+    res.json(effectiveSettings(db, req.user!.id));
+  });
   api.use('/profile', authenticate(db, config.jwtSecret), profileRouter(deps));
   api.use('/sessions', authenticate(db, config.jwtSecret), sessionsRouter(deps));
+  api.use('/roadmap', authenticate(db, config.jwtSecret), roadmapRouter(deps));
   api.use('/', authenticate(db, config.jwtSecret), careRouter(deps));
   app.use('/api/v1', api);
 

@@ -1,9 +1,11 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import { z } from 'zod';
 import { HttpError, requireRegistered, requireRole } from '../auth.js';
 import type { Deps } from '../app.js';
 import { nowIso } from '../db.js';
-import { audit, hasCareRelationship, isVerifiedClinician, newId, sessionSummary } from '../util.js';
+import { requireFeature } from '../features.js';
+import { FOCUS_LABEL, getPatientRoadmapPlan, getPlanAuthor, getRoadmapConfig, savePatientRoadmapPlan, type FocusKey } from '../roadmap.js';
+import { audit, hasCareRelationship, isVerifiedClinician, newId, sessionSummary, VALID_CLINICIAN_SQL } from '../util.js';
 
 const MODES = ['video', 'phone', 'in_person', 'message'] as const;
 
@@ -11,15 +13,16 @@ export function careRouter({ db }: Deps) {
   const r = Router();
 
   // ---------- directory (patients only) ----------
-  r.get('/clinicians', requireRole('patient'), requireRegistered, (req, res) => {
+  r.get('/clinicians', requireRole('patient'), requireRegistered, requireFeature(db, 'clinicianDirectory'), (req, res) => {
     const q = z.object({ q: z.string().trim().max(80).optional() }).parse(req.query).q;
     const rows = db
       .prepare(
         `SELECT u.id, u.full_name AS fullName, c.title, c.specialty, c.organisation,
                 c.license_region AS licenseRegion, c.years_experience AS yearsExperience,
-                c.languages, c.bio, c.accepts_new_patients AS acceptsNewPatients
+                c.languages, c.bio, c.accepts_new_patients AS acceptsNewPatients,
+                c.verified_at AS verifiedAt
          FROM users u JOIN clinician_profiles c ON c.user_id = u.id
-         WHERE u.registered = 1 AND c.verification_status = 'verified'
+         WHERE u.registered = 1 AND ${VALID_CLINICIAN_SQL}
          ORDER BY u.full_name`,
       )
       .all() as any[];
@@ -32,11 +35,11 @@ export function careRouter({ db }: Deps) {
             .includes(needle),
         )
       : rows;
-    res.json({ clinicians: list.map((c) => ({ ...c, acceptsNewPatients: !!c.acceptsNewPatients })) });
+    res.json({ clinicians: list.map((c) => ({ ...c, acceptsNewPatients: !!c.acceptsNewPatients, verified: true })) });
   });
 
   // ---------- appointments ----------
-  r.post('/appointments', requireRole('patient'), requireRegistered, (req, res) => {
+  r.post('/appointments', requireRole('patient'), requireRegistered, requireFeature(db, 'consultations'), (req, res) => {
     const b = z
       .object({
         clinicianId: z.string(),
@@ -75,11 +78,12 @@ export function careRouter({ db }: Deps) {
     const rows = db
       .prepare(
         u.role === 'patient'
-          ? `SELECT a.*, cu.full_name AS other_name, cp.specialty AS other_detail
+          ? `SELECT a.*, cu.full_name AS other_name, c.specialty AS other_detail,
+                    ${VALID_CLINICIAN_SQL} AS other_verified
              FROM appointments a JOIN users cu ON cu.id = a.clinician_id
-             LEFT JOIN clinician_profiles cp ON cp.user_id = a.clinician_id
+             LEFT JOIN clinician_profiles c ON c.user_id = a.clinician_id
              WHERE a.patient_id = ? ORDER BY a.requested_start DESC`
-          : `SELECT a.*, pu.full_name AS other_name, '' AS other_detail
+          : `SELECT a.*, pu.full_name AS other_name, '' AS other_detail, 0 AS other_verified
              FROM appointments a JOIN users pu ON pu.id = a.patient_id
              WHERE a.clinician_id = ? ORDER BY a.requested_start DESC`,
       )
@@ -91,6 +95,7 @@ export function careRouter({ db }: Deps) {
         clinicianId: a.clinician_id,
         otherName: a.other_name,
         otherDetail: a.other_detail,
+        otherVerified: !!a.other_verified,
         requestedStart: a.requested_start,
         mode: a.mode,
         reason: a.reason,
@@ -176,6 +181,49 @@ export function careRouter({ db }: Deps) {
       .all(pid, cid) as any[];
     audit(db, cid, 'clinician_list_patient_sessions', pid);
     res.json({ patient, sessions: rows.map((s) => sessionSummary(s)) });
+  });
+
+  // ---------- roadmap plan for a patient in this clinician's care ----------
+  // The clinician sets focus, stage, session length and a note. They do not see figures derived
+  // from sessions the patient has not shared, so "Automatic" is not resolved for them.
+  const careOr404 = (req: Request) => {
+    const cid = req.user!.id;
+    const pid = String(req.params.patientId);
+    if (!isVerifiedClinician(db, cid) || !hasCareRelationship(db, pid, cid)) throw new HttpError(404, 'Patient not found.');
+    return { cid, pid };
+  };
+  const planView = (pid: string) => {
+    const cfg = getRoadmapConfig(db);
+    return {
+      plan: getPatientRoadmapPlan(db, pid),
+      setBy: getPlanAuthor(db, pid),
+      focusOptions: (Object.keys(FOCUS_LABEL) as FocusKey[]).map((k) => ({ value: k, label: FOCUS_LABEL[k] })),
+      stageOptions: ['Foundations', 'Focus', 'Carry it into conversation', 'Everyday confidence'].map((t, i) => ({ value: i + 1, label: t })),
+      minuteOptions: [2, 3, 5, 10],
+      suggestions: cfg.suggestions,
+    };
+  };
+
+  r.get('/clinician/patients/:patientId/roadmap', requireRole('clinician'), requireRegistered, (req, res) => {
+    const { pid } = careOr404(req);
+    res.json(planView(pid));
+  });
+
+  r.put('/clinician/patients/:patientId/roadmap', requireRole('clinician'), requireRegistered, (req, res) => {
+    const { cid, pid } = careOr404(req);
+    const b = z
+      .object({
+        focus: z.enum(Object.keys(FOCUS_LABEL) as [FocusKey, ...FocusKey[]]).nullable(),
+        stage: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).nullable(),
+        minutes: z.union([z.literal(2), z.literal(3), z.literal(5), z.literal(10)]).nullable(),
+        note: z.string().trim().max(500),
+      })
+      .strict()
+      .parse(req.body);
+    savePatientRoadmapPlan(db, pid, b, cid);
+    audit(db, cid, 'clinician_update_roadmap',
+      `${pid}: focus=${b.focus ?? 'auto'}, stage=${b.stage ?? 'auto'}, minutes=${b.minutes ?? 'auto'}${b.note ? ', note' : ''}`);
+    res.json(planView(pid));
   });
 
   return r;

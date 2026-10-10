@@ -1,12 +1,26 @@
 import { Building2, CalendarPlus, Languages, MapPin, Search, Stethoscope } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
-import { Alert, Badge, Button, EmptyState, Input, PageHeader, Select, Spinner, Textarea } from '../components/ui';
+import { Alert, Badge, Button, EmptyState, Input, PageHeader, Select, Spinner, Textarea, VerifiedBadge } from '../components/ui';
 import { api, ApiError } from '../lib/api';
+import { useFeatures } from '../lib/features';
 import { MODE_LABEL } from '../lib/format';
 import { useAsync } from '../lib/hooks';
 import type { AppointmentMode, Clinician } from '../lib/types';
 
 export default function Clinicians() {
+  const { features: f } = useFeatures();
+  if (!f.clinicianDirectory) {
+    return (
+      <>
+        <PageHeader title="Find a clinician" />
+        <Alert tone="info" title="The clinician directory is not available right now">It has been turned off for your account. Existing consultations are still listed under Consultations.</Alert>
+      </>
+    );
+  }
+  return <Directory canBook={f.consultations} />;
+}
+
+function Directory({ canBook }: { canBook: boolean }) {
   const [q, setQ] = useState('');
   const [debounced, setDebounced] = useState('');
   useEffect(() => { const t = setTimeout(() => setDebounced(q.trim()), 250); return () => clearTimeout(t); }, [q]);
@@ -16,11 +30,12 @@ export default function Clinicians() {
 
   return (
     <>
-      <PageHeader title="Find a clinician" subtitle="Request a consultation with a verified healthcare professional." />
+      <PageHeader title="Find a clinician" subtitle="Every clinician here has a licence checked by FluentAI that has not expired." />
       <div className="relative mb-6 max-w-md">
         <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" aria-hidden />
         <input className="input pl-10" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name, specialty, language or place" aria-label="Search clinicians" />
       </div>
+      {!canBook && <Alert tone="info" className="mb-6">New consultation requests are turned off for your account right now.</Alert>}
       {booked && <Alert tone="ok" title="Request sent" className="mb-6">{booked} will review your request. You can follow its status under Consultations.</Alert>}
       {error && <Alert tone="danger" className="mb-6">{error}</Alert>}
       {loading ? <Spinner /> : !data?.clinicians.length ? (
@@ -37,7 +52,7 @@ export default function Clinicians() {
                     {c.fullName.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase()}
                   </span>
                   <div>
-                    <h2 className="font-semibold">{c.title} {c.fullName}</h2>
+                    <h2 className="flex flex-wrap items-center gap-2 font-semibold">{c.title} {c.fullName} {c.verified && <VerifiedBadge since={c.verifiedAt} />}</h2>
                     <p className="text-sm text-ink-muted">{c.specialty}</p>
                   </div>
                 </div>
@@ -52,9 +67,9 @@ export default function Clinicians() {
               <div className="mt-5">
                 {open === c.id ? (
                   <BookingForm clinician={c} onCancel={() => setOpen(null)} onDone={() => { setOpen(null); setBooked(`${c.title} ${c.fullName}`); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />
-                ) : (
+                ) : canBook ? (
                   <Button variant="secondary" onClick={() => setOpen(c.id)} disabled={!c.acceptsNewPatients}><CalendarPlus className="h-4 w-4" aria-hidden /> Request a consultation</Button>
-                )}
+                ) : null}
               </div>
             </li>
           ))}

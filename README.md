@@ -63,8 +63,33 @@ Single-process deployment: `cd frontend && npm run build`, then run the API; it 
 ## Accounts, registration and roles
 
 1. **Sign up** (name, email, password, role, terms).
-2. **Registration** (separate page): patients confirm they are 18+, give age group, language, goals and **consent to voice processing**; clinicians give title, specialty, licence number and region.
-3. **Clinicians start as `pending`.** They are hidden from the directory and cannot accept requests or see shared data until verified. In development `AUTO_VERIFY_CLINICIANS=true` skips this; **production refuses to start with it enabled**. Verification itself is a manual step you must provide (check the licence with the issuing body, then set `verification_status = 'verified'`).
+2. **Registration** (separate page): patients confirm they are 18+, give age group, language, goals and **consent to voice processing**; clinicians give title, specialty, licence number, issuing body and licence expiry date.
+3. **Clinicians start as `pending`.** They are hidden from the directory and cannot accept requests or see shared data until verified. In development `AUTO_VERIFY_CLINICIANS=true` skips this (it is now off by default in `.env`); **production refuses to start with it enabled**. Verification is done by an admin in the admin panel after checking the licence (see below).
+
+## Admin panel
+
+A panel at **/admin** for whoever runs FluentAI. There is one sign-in page for everyone (**/login**): admin credentials open the admin panel, patient and clinician credentials open the app. The admin account still has its own table and its own sign-in cookie, so patient and clinician logins cannot open the panel, and the admin login cannot open the patient app. Nobody can sign up with the admin's email.
+
+- **Credentials:** set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `backend/.env`. The account is created, or its password updated, every time the API starts. In development, if they are empty, the login is `admin@fluentai.local` / `FluentAdmin#2026`. In production both must be set, and the password must be at least 12 characters.
+- **Patient features:** switch features on or off for every patient: browser recording, file upload, speech analysis, the clinician directory, consultation requests, session sharing, progress charts and the daily practice idea. Also set the weekly goal and an announcement shown on every patient's dashboard.
+- **Per-patient settings:** open a patient and set any feature to Default, On or Off for that patient only, plus a custom weekly goal.
+- **Enforced by the API, not only hidden:** switched-off features return `403` from the server. Removing a share and deleting data are always allowed. Note: recording and upload are told apart by a `source` field the browser sends, so a patient with one of them still on could send a file through it.
+- **Clinicians and licences:** a clinician is approved only with a valid licence. At registration they must give their licence number, issuing body and expiry date (an expired date is refused). To approve, the admin must enter the expiry date confirmed with the issuing body (it must be in the future), the register reference they checked, and tick that they checked it; the server refuses an approval without these. The check (who, when, reference) is stored and logged. When the licence expiry date passes, the clinician automatically stops being verified: they disappear from the directory, cannot accept requests or open shared sessions, and show as "Licence expired" in the admin panel until they enter a renewed licence under Account and an admin checks it again. Changing licence details always sends the clinician back for a new check.
+- **Verified badge:** patients see a blue "Verified" badge next to clinicians with a checked, valid licence: in the directory, on consultations, in the dashboard, in the sharing panel and on clinician notes. FluentAI cannot query licence registers automatically (there is no public API for them), so the check itself is done by a person.
+- **Activity log:** admin sign-ins (including failed ones), setting changes, patient views and clinician approvals are written to `audit_log`.
+- The admin can see a patient's registration details and activity counts, but not their recordings or transcripts.
+
+## Fluency roadmap
+
+Patients get a personal practice plan at **/app/roadmap**, rebuilt every time a session is analysed (`backend/src/roadmap.ts`).
+
+- **Focus area:** from the latest analysed sessions FluentAI picks what has the most room to change: repetitions, fillers, long pauses or a fast pace (lowest flow-index component; pace above 170 wpm). If everything looks smooth, the focus is carrying skills into everyday speaking.
+- **Four stages:** Foundations (3 analysed sessions and a breathing exercise), Focus (a 25% improvement on the focus metric against the first sessions, after 6 sessions), Carry it into conversation (3 conversation-practice sessions at or above the starting flow index) and Everyday confidence (meet the weekly goal two weeks running and flow index 10 points above the start). A stage unlocks when the previous one's targets are met.
+- **This week:** the weekly goal split into short sessions, each with an activity and a technique (easy onsets, light contacts, pull-outs, planned phrasing, pausing instead of fillers, gentle stretching, steady pace, relaxed breathing). "Start" opens the recording page with that activity and technique.
+- **AI coaching (optional):** set `ANTHROPIC_API_KEY` in `backend/.env` and patients can switch on "Personal coaching from Claude". Claude (`ANTHROPIC_MODEL`, default `claude-sonnet-5-5`) then writes the summary, weekly focus and stage tips from the numbers. Only aggregate numbers, the plan, first name, age group, language and the patient's own goal text are sent; never audio, transcripts or email. The text is cached and only regenerated when the numbers change. If the key is missing, the AI call fails, or the patient or admin turns it off, the built-in wording is used.
+- **Clinician control (per patient):** a verified clinician with an accepted consultation opens the patient under My patients and uses "Fluency roadmap" to set the focus area, the stage and the session length from dropdowns ("Automatic" follows the patient's results), and a note picked from a list of ready-made suggestions and edited before saving. The patient sees it as "Note from Dr …, your clinician", and it is passed to the AI coach so its text agrees. The clinician is not shown figures derived from sessions the patient has not shared. Changes are written to the activity log. The admin panel has no roadmap controls.
+- Admins can switch the roadmap and AI coaching off globally or per patient on the Patient features page.
+- The plan gives general practice ideas, not a diagnosis or treatment plan.
 
 ## How consultations and privacy work
 
@@ -109,17 +134,3 @@ python qa/ui_qa.py                     # real browser (needs playwright); saves 
 - **Adults only (18+).** Supporting children needs guardian consent flows and a legal review.
 - **Clinician licence verification is manual** (see above).
 - **Production checklist:** HTTPS, a strong `JWT_SECRET` and `SPEECH_SERVICE_KEY`, regular backups of `DATA_DIR`, a retention and deletion policy, a privacy notice and terms reviewed for your jurisdiction (e.g. health-data rules), and a decision on where data is hosted.
-
-## Deploying the web app on Vercel
-
-Vercel hosts the **frontend** (`frontend/`). The API (`backend/`) and the speech service
-(`speech-service/`) need a host that keeps a running process and persistent storage, so
-they cannot run on Vercel as they are (SQLite file, uploaded audio on disk, Python Whisper).
-
-1. Deploy the API and the speech service somewhere that supports them (see the architecture
-   plan: for a free setup, Render for the API, Supabase for the database, Backblaze B2 for audio).
-2. In Vercel, import this repository and set **Root Directory** to `frontend`.
-3. Edit `frontend/vercel.json` and replace `YOUR-BACKEND-URL` with the public address of your API.
-   Requests to `/api/...` are then forwarded there, so the browser sees one origin and the
-   httpOnly sign-in cookie keeps working.
-4. Redeploy. Without a running backend, the pages load but sign-in and analysis will fail.

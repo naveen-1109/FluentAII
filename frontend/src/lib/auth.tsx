@@ -6,7 +6,8 @@ import type { Role, User } from './types';
 interface AuthState {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<User>;
+  /** `null` means admin credentials were used: the admin session is set and the caller should open /admin. */
+  login: (email: string, password: string) => Promise<User | null>;
   signup: (b: { fullName: string; email: string; password: string; role: Role }) => Promise<User>;
   logout: () => Promise<void>;
   refresh: () => Promise<User | null>;
@@ -40,7 +41,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       refresh,
       login: async (email, password) => {
-        const { user } = await api.auth.login({ email, password });
+        const { user, admin } = await api.auth.login({ email, password });
+        if (admin || !user) { setUser(null); return null; }
         setUser(user);
         return user;
       },
